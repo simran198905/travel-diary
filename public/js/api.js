@@ -1,3 +1,5 @@
+const API_BASE = 'https://travel-diary-production.up.railway.app';
+
 const api = {
   async request(method, url, data = null, isFormData = false) {
     const options = {
@@ -16,7 +18,8 @@ const api = {
       }
     }
 
-    const response = await fetch(url, options);
+    const fullUrl = `${API_BASE}${url}`;
+    const response = await fetch(fullUrl, options);
 
     let json = {};
     try {
