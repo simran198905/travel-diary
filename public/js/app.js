@@ -27,13 +27,14 @@ function renderNav() {
   const initial = displayName.charAt(0).toUpperCase();
 
   nav.innerHTML = `
-    <div class="nav-brand" onclick="Router.navigate('/dashboard')">
+    <div class="nav-brand" onclick="Router.navigate('/')">
       <div class="nav-brand-mark">W</div>
       Wanderlust
     </div>
 
     <div class="nav-links">
-      <button class="nav-link" onclick="Router.navigate('/dashboard')">Home</button>
+      <button class="nav-link" onclick="Router.navigate('/')">Home</button>
+      <button class="nav-link" onclick="Router.navigate('/dashboard')">Dashboard</button>
       <button class="nav-link" onclick="Router.navigate('/trips')">Trips</button>
       <button class="nav-link" onclick="Router.navigate('/places')">Places</button>
       <button class="nav-link" onclick="Router.navigate('/photos')">Photos</button>
@@ -76,26 +77,91 @@ async function initApp() {
   }
 
   Router.register('/', () => {
-    if (AppState.user) Router.navigate('/dashboard', false);
-    else renderLandingPage();
+    renderLandingPage();
   });
 
   Router.register('/login', renderLoginPage);
   Router.register('/register', renderRegisterPage);
 
-  Router.register('/dashboard', renderDashboard);
+  Router.register('/dashboard', () => {
+    if (!AppState.user) {
+      Router.navigate('/login');
+      return;
+    }
+    renderDashboard();
+  });
 
-  Router.register('/trips', renderTripsPage);
-  Router.register('/trips/new', renderAddTripPage);
-  Router.register('/trips/:id', renderTripDetail);
-  Router.register('/trips/:id/add-place', renderAddPlacePage);
-  Router.register('/trips/:id/add-photo', renderAddPhotoPage);
+  Router.register('/trips', () => {
+    if (!AppState.user) {
+      Router.navigate('/login');
+      return;
+    }
+    renderTripsPage();
+  });
 
-  Router.register('/places', renderPlacesPage);
-  Router.register('/photos', renderPhotosPage);
-  Router.register('/locations', renderLocationsPage);
+  Router.register('/trips/new', () => {
+    if (!AppState.user) {
+      Router.navigate('/login');
+      return;
+    }
+    renderAddTripPage();
+  });
 
-  Router.register('/map', renderWorldMapPage);
+  Router.register('/trips/:id', (params) => {
+    if (!AppState.user) {
+      Router.navigate('/login');
+      return;
+    }
+    renderTripDetail(params);
+  });
+
+  Router.register('/trips/:id/add-place', (params) => {
+    if (!AppState.user) {
+      Router.navigate('/login');
+      return;
+    }
+    renderAddPlacePage(params);
+  });
+
+  Router.register('/trips/:id/add-photo', (params) => {
+    if (!AppState.user) {
+      Router.navigate('/login');
+      return;
+    }
+    renderAddPhotoPage(params);
+  });
+
+  Router.register('/places', () => {
+    if (!AppState.user) {
+      Router.navigate('/login');
+      return;
+    }
+    renderPlacesPage();
+  });
+
+  Router.register('/photos', () => {
+    if (!AppState.user) {
+      Router.navigate('/login');
+      return;
+    }
+    renderPhotosPage();
+  });
+
+  Router.register('/locations', () => {
+    if (!AppState.user) {
+      Router.navigate('/login');
+      return;
+    }
+    renderLocationsPage();
+  });
+
+  Router.register('/map', () => {
+    if (!AppState.user) {
+      Router.navigate('/login');
+      return;
+    }
+    renderWorldMapPage();
+  });
 
   let tc = document.getElementById('toast-container');
   if (!tc) {
