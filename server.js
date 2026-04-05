@@ -26,13 +26,15 @@ app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(express.static(path.join(__dirname, 'public')));
 
+
+app.set('trust proxy', 1);
 app.use(session({
   secret: process.env.SESSION_SECRET || 'travel-diary-secret-2024',
   resave: false,
   saveUninitialized: false,
   cookie: {
     secure: true,
-    sameSite: 'none',
+    sameSite: 'lax',
     maxAge: 24 * 60 * 60 * 1000
   }
 }));
@@ -96,10 +98,17 @@ app.post('/api/register', async (req, res) => {
     req.session.userId = result.insertId;
     req.session.username = username;
 
-    res.json({
-      success: true,
-      userId: result.insertId,
-      username
+    req.session.save((err) => {
+      if (err) {
+        console.error('Session save error:', err);
+        return res.status(500).json({ error: 'Session error' });
+      }
+
+      res.json({
+        success: true,
+        userId: result.insertId,
+        username
+      });
     });
   } catch (err) {
     console.error('Register error:', err);
@@ -131,10 +140,17 @@ app.post('/api/login', async (req, res) => {
     req.session.userId = user.user_id;
     req.session.username = user.name;
 
-    res.json({
-      success: true,
-      userId: user.user_id,
-      username: user.name
+    req.session.save((err) => {
+      if (err) {
+        console.error('Session save error:', err);
+        return res.status(500).json({ error: 'Session error' });
+      }
+
+      res.json({
+        success: true,
+        userId: user.user_id,
+        username: user.name
+      });
     });
   } catch (err) {
     console.error('Login error:', err);
