@@ -73,7 +73,7 @@ async function handleLogin() {
   const btn = document.getElementById('login-btn');
 
   if (!email || !password) {
-    toast('Please fill all fields', 'error');
+    alert('Please fill all fields');
     return;
   }
 
@@ -84,11 +84,11 @@ async function handleLogin() {
     const data = await api.post('/api/login', { email, password });
     AppState.user = data;
 
-    toast('Welcome back! 🌸', 'success');
+    alert('Welcome back!');
     Router.navigate('/dashboard');
     renderNav();
   } catch (err) {
-    toast(err.message || 'Login failed', 'error');
+    alert(err.message || 'Login failed');
     btn.textContent = 'Sign in';
     btn.disabled = false;
   }
@@ -157,12 +157,12 @@ async function handleRegister() {
   const btn = document.getElementById('reg-btn');
 
   if (!username || !email || !password) {
-    toast('Please fill all fields', 'error');
+    alert('Please fill all fields');
     return;
   }
 
   if (password.length < 6) {
-    toast('Password must be at least 6 characters', 'error');
+    alert('Password must be at least 6 characters');
     return;
   }
 
@@ -173,11 +173,11 @@ async function handleRegister() {
     const data = await api.post('/api/register', { username, email, password });
     AppState.user = data;
 
-    toast('Welcome to Wanderlust! 🌸', 'success');
+    alert('Welcome to Wanderlust!');
     Router.navigate('/dashboard');
     renderNav();
   } catch (err) {
-    toast(err.message || 'Registration failed', 'error');
+    alert(err.message || 'Registration failed');
     btn.textContent = 'Create account';
     btn.disabled = false;
   }

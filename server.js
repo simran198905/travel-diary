@@ -78,7 +78,7 @@ app.post('/api/register', async (req, res) => {
     }
 
     const [existing] = await db.query(
-      'SELECT id FROM users WHERE email = ? OR username = ?',
+      'SELECT user_id FROM users WHERE email = ? OR name = ?',
       [email, username]
     );
 
@@ -89,7 +89,7 @@ app.post('/api/register', async (req, res) => {
     const hashed = await bcrypt.hash(password, 10);
 
     const [result] = await db.query(
-      'INSERT INTO users (username, email, password) VALUES (?, ?, ?)',
+      'INSERT INTO users (name, email, password) VALUES (?, ?, ?)',
       [username, email, hashed]
     );
 
@@ -128,13 +128,13 @@ app.post('/api/login', async (req, res) => {
       return res.status(401).json({ error: 'Invalid credentials' });
     }
 
-    req.session.userId = user.id;
-    req.session.username = user.username;
+    req.session.userId = user.user_id;
+    req.session.username = user.name;
 
     res.json({
       success: true,
-      userId: user.id,
-      username: user.username
+      userId: user.user_id,
+      username: user.name
     });
   } catch (err) {
     console.error('Login error:', err);
@@ -142,16 +142,11 @@ app.post('/api/login', async (req, res) => {
   }
 });
 
-// Logout
-app.post('/api/logout', (req, res) => {
-  req.session.destroy(() => res.json({ success: true }));
-});
-
 // Get current user
 app.get('/api/me', requireAuth, async (req, res) => {
   try {
     const [rows] = await db.query(
-      'SELECT id, username, email, profile_photo, bio, created_at FROM users WHERE id = ?',
+      'SELECT user_id, name, email, phone, created_at FROM users WHERE user_id = ?',
       [req.session.userId]
     );
 
@@ -165,6 +160,7 @@ app.get('/api/me', requireAuth, async (req, res) => {
     res.status(500).json({ error: 'Server error' });
   }
 });
+
 
 // ─── TRIPS ROUTES ────────────────────────────────────────────────────────────
 
