@@ -1,5 +1,3 @@
-const BASE_URL = "https://travel-diary-production.up.railway.app";
-
 const api = {
   async request(method, url, data = null, isFormData = false) {
     const options = {
@@ -18,8 +16,7 @@ const api = {
       }
     }
 
-    // 🔥 IMPORTANT FIX
-    const response = await fetch(BASE_URL + url, options);
+    const response = await fetch(url, options);
 
     let json = {};
     try {
@@ -51,7 +48,21 @@ const api = {
     return api.request('PUT', url, data);
   },
 
+  putForm(url, formData) {
+    return api.request('PUT', url, formData, true);
+  },
+
   delete(url) {
     return api.request('DELETE', url);
   }
 };
+
+function toast(message, type = 'default', duration = 3000) {
+  alert(message);
+}
+
+function showLoader(show) {
+  const loader = document.getElementById('global-loader');
+  if (!loader) return;
+  loader.style.display = show ? 'flex' : 'none';
+}
