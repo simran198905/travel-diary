@@ -18,18 +18,21 @@ if (!fs.existsSync(uploadsDir)) {
 
 // Middleware
 app.use(cors({
-  origin: true,
+  origin: 'https://travel-diary-drab-alpha.vercel.app',
   credentials: true
 }));
+
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(express.static(path.join(__dirname, 'public')));
+
 app.use(session({
   secret: process.env.SESSION_SECRET || 'travel-diary-secret-2024',
   resave: false,
   saveUninitialized: false,
   cookie: {
-    secure: false,
+    secure: true,
+    sameSite: 'none',
     maxAge: 24 * 60 * 60 * 1000
   }
 }));
@@ -75,7 +78,7 @@ app.post('/api/register', async (req, res) => {
     }
 
     const [existing] = await db.query(
-      'SELECT user_id FROM users WHERE email = ? OR name = ?',
+      'SELECT id FROM users WHERE email = ? OR username = ?',
       [email, username]
     );
 
@@ -86,7 +89,7 @@ app.post('/api/register', async (req, res) => {
     const hashed = await bcrypt.hash(password, 10);
 
     const [result] = await db.query(
-      'INSERT INTO users (name, email, password) VALUES (?, ?, ?)',
+      'INSERT INTO users (username, email, password) VALUES (?, ?, ?)',
       [username, email, hashed]
     );
 
@@ -125,13 +128,13 @@ app.post('/api/login', async (req, res) => {
       return res.status(401).json({ error: 'Invalid credentials' });
     }
 
-    req.session.userId = user.user_id;
-    req.session.username = user.name;
+    req.session.userId = user.id;
+    req.session.username = user.username;
 
     res.json({
       success: true,
-      userId: user.user_id,
-      username: user.name
+      userId: user.id,
+      username: user.username
     });
   } catch (err) {
     console.error('Login error:', err);
@@ -148,7 +151,7 @@ app.post('/api/logout', (req, res) => {
 app.get('/api/me', requireAuth, async (req, res) => {
   try {
     const [rows] = await db.query(
-      'SELECT user_id, name, email, phone FROM users WHERE user_id = ?',
+      'SELECT id, username, email, profile_photo, bio, created_at FROM users WHERE id = ?',
       [req.session.userId]
     );
 
