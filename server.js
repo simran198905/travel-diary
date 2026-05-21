@@ -1,24 +1,20 @@
+require('dotenv').config();
+
 const express = require('express');
 const cors = require('cors');
 const session = require('express-session');
-const multer = require('multer');
 const path = require('path');
-const fs = require('fs');
 const bcrypt = require('bcryptjs');
 const db = require('./db');
+const { upload, cloudinary } = require('./cloudinary');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// Ensure uploads directory exists
-const uploadsDir = path.join(__dirname, 'public/uploads');
-if (!fs.existsSync(uploadsDir)) {
-  fs.mkdirSync(uploadsDir, { recursive: true });
-}
+// ─── MIDDLEWARE ───────────────────────────────────────────────────────────────
 
-// Middleware
 app.use(cors({
-  origin: 'https://travel-diary-drab-alpha.vercel.app',
+  origin: process.env.CLIENT_URL || 'http://localhost:3000',
   credentials: true
 }));
 
@@ -26,41 +22,21 @@ app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(express.static(path.join(__dirname, 'public')));
 
-
 app.set('trust proxy', 1);
+
 app.use(session({
   secret: process.env.SESSION_SECRET || 'travel-diary-secret-2024',
   resave: false,
   saveUninitialized: false,
   cookie: {
-    secure: true,
+    secure: process.env.NODE_ENV === 'production',
     sameSite: 'lax',
     maxAge: 24 * 60 * 60 * 1000
   }
 }));
 
-// Multer config for file uploads
-const storage = multer.diskStorage({
-  destination: (req, file, cb) => cb(null, uploadsDir),
-  filename: (req, file, cb) => {
-    const uniqueSuffix = `${Date.now()}-${Math.round(Math.random() * 1e9)}`;
-    cb(null, uniqueSuffix + path.extname(file.originalname));
-  }
-});
+// ─── AUTH MIDDLEWARE ──────────────────────────────────────────────────────────
 
-const upload = multer({
-  storage,
-  limits: { fileSize: 10 * 1024 * 1024 },
-  fileFilter: (req, file, cb) => {
-    const allowed = /jpeg|jpg|png|gif|webp/;
-    const ext = allowed.test(path.extname(file.originalname).toLowerCase());
-    const mime = allowed.test(file.mimetype);
-    if (ext && mime) return cb(null, true);
-    cb(new Error('Only image files are allowed'));
-  }
-});
-
-// Auth middleware
 function requireAuth(req, res, next) {
   if (!req.session.userId) {
     return res.status(401).json({ error: 'Not authenticated' });
@@ -68,7 +44,7 @@ function requireAuth(req, res, next) {
   next();
 }
 
-// ─── AUTH ROUTES ────────────────────────────────────────────────────────────
+// ─── AUTH ROUTES ──────────────────────────────────────────────────────────────
 
 // Register
 app.post('/api/register', async (req, res) => {
@@ -103,12 +79,7 @@ app.post('/api/register', async (req, res) => {
         console.error('Session save error:', err);
         return res.status(500).json({ error: 'Session error' });
       }
-
-      res.json({
-        success: true,
-        userId: result.insertId,
-        username
-      });
+      res.json({ success: true, userId: result.insertId, username });
     });
   } catch (err) {
     console.error('Register error:', err);
@@ -145,17 +116,20 @@ app.post('/api/login', async (req, res) => {
         console.error('Session save error:', err);
         return res.status(500).json({ error: 'Session error' });
       }
-
-      res.json({
-        success: true,
-        userId: user.user_id,
-        username: user.name
-      });
+      res.json({ success: true, userId: user.user_id, username: user.name });
     });
   } catch (err) {
     console.error('Login error:', err);
     res.status(500).json({ error: 'Server error' });
   }
+});
+
+// Logout
+app.post('/api/logout', (req, res) => {
+  req.session.destroy((err) => {
+    if (err) return res.status(500).json({ error: 'Logout failed' });
+    res.json({ success: true });
+  });
 });
 
 // Get current user
@@ -177,14 +151,13 @@ app.get('/api/me', requireAuth, async (req, res) => {
   }
 });
 
+// ─── TRIPS ROUTES ─────────────────────────────────────────────────────────────
 
-// ─── TRIPS ROUTES ────────────────────────────────────────────────────────────
-
-// Get all trips for current user
+// Get all trips
 app.get('/api/trips', requireAuth, async (req, res) => {
   try {
     const [trips] = await db.query(
-      `SELECT t.*, 
+      `SELECT t.*,
         (SELECT COUNT(*) FROM places WHERE trip_id = t.id AND user_id = t.user_id) AS place_count,
         (SELECT COUNT(*) FROM photos WHERE trip_id = t.id AND user_id = t.user_id) AS photo_count
        FROM trips t
@@ -212,8 +185,6 @@ app.get('/api/trips/:id', requireAuth, async (req, res) => {
       return res.status(404).json({ error: 'Trip not found' });
     }
 
-    const trip = trips[0];
-
     const [places] = await db.query(
       'SELECT * FROM places WHERE trip_id = ? AND user_id = ? ORDER BY visit_date ASC, created_at DESC',
       [req.params.id, req.session.userId]
@@ -224,9 +195,9 @@ app.get('/api/trips/:id', requireAuth, async (req, res) => {
       [req.params.id, req.session.userId]
     );
 
-    res.json({ ...trip, places, photos });
+    res.json({ ...trips[0], places, photos });
   } catch (err) {
-    console.error('Get single trip error:', err);
+    console.error('Get trip error:', err);
     res.status(500).json({ error: 'Server error' });
   }
 });
@@ -240,11 +211,10 @@ app.post('/api/trips', requireAuth, upload.single('cover_photo'), async (req, re
       return res.status(400).json({ error: 'Title required' });
     }
 
-    const cover_photo = req.file ? `/uploads/${req.file.filename}` : null;
+    const cover_photo = req.file ? req.file.path : null;
 
     const [result] = await db.query(
-      `INSERT INTO trips
-       (user_id, title, description, start_date, end_date, cover_photo, status)
+      `INSERT INTO trips (user_id, title, description, start_date, end_date, cover_photo, status)
        VALUES (?, ?, ?, ?, ?, ?, ?)`,
       [
         req.session.userId,
@@ -271,18 +241,17 @@ app.put('/api/trips/:id', requireAuth, upload.single('cover_photo'), async (req,
 
     const fields = { title, description, start_date, end_date, status };
     if (req.file) {
-      fields.cover_photo = `/uploads/${req.file.filename}`;
+      fields.cover_photo = req.file.path;
     }
 
     const filteredKeys = Object.keys(fields).filter((key) => fields[key] !== undefined);
+
     if (filteredKeys.length === 0) {
       return res.status(400).json({ error: 'No fields provided to update' });
     }
 
     const sets = filteredKeys.map((key) => `${key} = ?`).join(', ');
-    const values = filteredKeys.map((key) => fields[key]);
-
-    values.push(req.params.id, req.session.userId);
+    const values = [...filteredKeys.map((key) => fields[key]), req.params.id, req.session.userId];
 
     await db.query(
       `UPDATE trips SET ${sets} WHERE id = ? AND user_id = ?`,
@@ -311,13 +280,13 @@ app.delete('/api/trips/:id', requireAuth, async (req, res) => {
   }
 });
 
-// ─── PLACES ROUTES ───────────────────────────────────────────────────────────
+// ─── PLACES ROUTES ────────────────────────────────────────────────────────────
 
-// Get places for a specific trip
+// Get places for a trip
 app.get('/api/trips/:tripId/places', requireAuth, async (req, res) => {
   try {
     const [places] = await db.query(
-      `SELECT p.*, 
+      `SELECT p.*,
         (SELECT COUNT(*) FROM photos WHERE place_id = p.id AND user_id = p.user_id) AS photo_count
        FROM places p
        WHERE p.trip_id = ? AND p.user_id = ?
@@ -332,7 +301,7 @@ app.get('/api/trips/:tripId/places', requireAuth, async (req, res) => {
   }
 });
 
-// Get all places for current user
+// Get all places
 app.get('/api/places', requireAuth, async (req, res) => {
   try {
     const [places] = await db.query(
@@ -361,8 +330,7 @@ app.post('/api/trips/:tripId/places', requireAuth, async (req, res) => {
     }
 
     const [result] = await db.query(
-      `INSERT INTO places
-       (trip_id, user_id, name, description, latitude, longitude, address, visit_date, rating)
+      `INSERT INTO places (trip_id, user_id, name, description, latitude, longitude, address, visit_date, rating)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         req.params.tripId,
@@ -399,9 +367,9 @@ app.delete('/api/places/:id', requireAuth, async (req, res) => {
   }
 });
 
-// ─── PHOTOS ROUTES ───────────────────────────────────────────────────────────
+// ─── PHOTOS ROUTES ────────────────────────────────────────────────────────────
 
-// Get all photos for current user
+// Get all photos
 app.get('/api/photos', requireAuth, async (req, res) => {
   try {
     const [photos] = await db.query(
@@ -421,7 +389,7 @@ app.get('/api/photos', requireAuth, async (req, res) => {
   }
 });
 
-// Get photos for trip
+// Get photos for a trip
 app.get('/api/trips/:tripId/photos', requireAuth, async (req, res) => {
   try {
     const [photos] = await db.query(
@@ -436,7 +404,7 @@ app.get('/api/trips/:tripId/photos', requireAuth, async (req, res) => {
   }
 });
 
-// Upload photos
+// Upload photos (Cloudinary)
 app.post('/api/trips/:tripId/photos', requireAuth, upload.array('photos', 20), async (req, res) => {
   try {
     if (!req.files || req.files.length === 0) {
@@ -447,11 +415,10 @@ app.post('/api/trips/:tripId/photos', requireAuth, upload.array('photos', 20), a
     const inserted = [];
 
     for (const file of req.files) {
-      const filename = `/uploads/${file.filename}`;
+      const filename = file.path; // Cloudinary URL
 
       const [result] = await db.query(
-        `INSERT INTO photos
-         (trip_id, place_id, user_id, filename, caption, latitude, longitude)
+        `INSERT INTO photos (trip_id, place_id, user_id, filename, caption, latitude, longitude)
          VALUES (?, ?, ?, ?, ?, ?, ?)`,
         [
           req.params.tripId,
@@ -474,7 +441,7 @@ app.post('/api/trips/:tripId/photos', requireAuth, upload.array('photos', 20), a
   }
 });
 
-// Delete photo
+// Delete photo (also removes from Cloudinary)
 app.delete('/api/photos/:id', requireAuth, async (req, res) => {
   try {
     const [rows] = await db.query(
@@ -486,14 +453,12 @@ app.delete('/api/photos/:id', requireAuth, async (req, res) => {
       return res.status(404).json({ error: 'Photo not found' });
     }
 
-    const filename = rows[0].filename.startsWith('/')
-      ? rows[0].filename.slice(1)
-      : rows[0].filename;
-
-    const filePath = path.join(__dirname, 'public', filename);
-
-    if (fs.existsSync(filePath)) {
-      fs.unlinkSync(filePath);
+    // Delete from Cloudinary
+    const imageUrl = rows[0].filename;
+    if (imageUrl && imageUrl.includes('cloudinary')) {
+      const parts = imageUrl.split('/');
+      const publicId = parts.slice(-2).join('/').replace(/\.[^/.]+$/, '');
+      await cloudinary.uploader.destroy(publicId);
     }
 
     await db.query(
@@ -508,18 +473,12 @@ app.delete('/api/photos/:id', requireAuth, async (req, res) => {
   }
 });
 
-// ─── LOCATIONS ROUTE ─────────────────────────────────────────────────────────
+// ─── LOCATIONS ROUTE ──────────────────────────────────────────────────────────
 
 app.get('/api/locations', requireAuth, async (req, res) => {
   try {
     const [locations] = await db.query(
-      `SELECT DISTINCT
-          address,
-          latitude,
-          longitude,
-          name,
-          visit_date,
-          trip_id
+      `SELECT DISTINCT address, latitude, longitude, name, visit_date, trip_id
        FROM places
        WHERE user_id = ?
        ORDER BY visit_date DESC, created_at DESC`,
@@ -533,36 +492,29 @@ app.get('/api/locations', requireAuth, async (req, res) => {
   }
 });
 
-// ─── STATS ROUTE ─────────────────────────────────────────────────────────────
+// ─── STATS ROUTE ──────────────────────────────────────────────────────────────
 
 app.get('/api/stats', requireAuth, async (req, res) => {
   try {
     const uid = req.session.userId;
 
     const [[{ trips }]] = await db.query(
-      'SELECT COUNT(*) AS trips FROM trips WHERE user_id = ?',
-      [uid]
+      'SELECT COUNT(*) AS trips FROM trips WHERE user_id = ?', [uid]
     );
-
     const [[{ places }]] = await db.query(
-      'SELECT COUNT(*) AS places FROM places WHERE user_id = ? AND visit_date IS NOT NULL',
-      [uid]
+      'SELECT COUNT(*) AS places FROM places WHERE user_id = ? AND visit_date IS NOT NULL', [uid]
     );
-
     const [[{ photos }]] = await db.query(
-      'SELECT COUNT(*) AS photos FROM photos WHERE user_id = ?',
-      [uid]
+      'SELECT COUNT(*) AS photos FROM photos WHERE user_id = ?', [uid]
     );
-
     const [[{ locations }]] = await db.query(
-      `SELECT COUNT(DISTINCT 
-          CASE 
+      `SELECT COUNT(DISTINCT
+          CASE
             WHEN address IS NOT NULL AND address != '' THEN address
             ELSE CONCAT(IFNULL(latitude, ''), ',', IFNULL(longitude, ''))
           END
         ) AS locations
-       FROM places
-       WHERE user_id = ?`,
+       FROM places WHERE user_id = ?`,
       [uid]
     );
 
@@ -573,26 +525,21 @@ app.get('/api/stats', requireAuth, async (req, res) => {
   }
 });
 
-// Global error handler
+// ─── GLOBAL ERROR HANDLER ─────────────────────────────────────────────────────
+
 app.use((err, req, res, next) => {
-  if (err instanceof multer.MulterError) {
-    return res.status(400).json({ error: err.message });
-  }
-
-  if (err) {
-    console.error('Unhandled error:', err);
-    return res.status(500).json({ error: err.message || 'Server error' });
-  }
-
-  next();
+  console.error('Unhandled error:', err);
+  res.status(500).json({ error: err.message || 'Server error' });
 });
 
-// Serve index for all non-API routes (SPA)
+// ─── SPA FALLBACK ─────────────────────────────────────────────────────────────
+
 app.get('*', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
+// ─── START SERVER ─────────────────────────────────────────────────────────────
+
 app.listen(PORT, () => {
-  console.log(`\n🌍 Travel Diary running at http://localhost:${PORT}`);
-  console.log('📌 Make sure MySQL is running and schema.sql has been imported\n');
+  console.log(`\n🌍 Travel Diary running at http://localhost:${PORT}\n`);
 });
